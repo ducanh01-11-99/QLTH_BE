@@ -11,6 +11,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using QLTH.Models.RequestDTO;
+using Microsoft.AspNetCore.Identity;
 
 namespace QLTH.Controller
 {
@@ -51,11 +52,11 @@ namespace QLTH.Controller
         // tạo hàm mã hóa, giải mã mật khẩu -> check điều kiện đăng nhập
         [HttpPost]
         [Route("login")]
-        public async Task<ActionResult<string>> Login(LoginRequest request)
+        public async Task<IActionResult> Login([FromBody] UserRegistrationRequestDto request)
         {
             var connectString = _configuration["ConnectionStrings:DefaultSQLConnection"].ToString() + ";trustServerCertificate=true";
             SqlConnection con = new SqlConnection(connectString);
-            SqlDataAdapter da = new SqlDataAdapter("Select * from Account where UserName = '" + request.Username + "'", con);
+            SqlDataAdapter da = new SqlDataAdapter("Select * from Account where UserName = '" + request.Name + "'", con);
             DataTable dt = new DataTable();
             da.Fill(dt);
             if(dt.Rows.Count > 0)
@@ -64,6 +65,15 @@ namespace QLTH.Controller
                 // Lấy ra mật khẩu
                 string userName = userExist["Username"].ToString();
                 string password = userExist["password"].ToString();
+
+                var newUser = new IdentityUser()
+                {
+                    Email = "",
+                    UserName = userName,
+                };
+
+
+
                 // byte[] bytesPass = Encoding.ASCII.GetBytes(password);
                 // byte[] bytesPassSalt = Encoding.ASCII.GetBytes("1234");
 
@@ -72,9 +82,9 @@ namespace QLTH.Controller
                 //{
                 //    var token = GenerateJwtToken(new UserDTO(userName, password, "19020217@vnu.edu.vn", 1));
                 //}
-                if(request.Password == password)
+                if (request.Password == password)
                 {
-                    var token = GenerateJwtToken(new UserDTO(userName, password, "19020217@vnu.edu.vn", 1));
+                    var token = GenerateJwtToken(newUser);
                     return Ok(new ResponseMessage(token, 0, true, false)); ;
                 } else
                 {
@@ -132,21 +142,21 @@ namespace QLTH.Controller
             }
         }
 
-        private string GenerateJwtToken(UserDTO user)
+        private string GenerateJwtToken(IdentityUser user)
         {
             var jwtTokenHandler = new JwtSecurityTokenHandler();
-
-            var key = Encoding.UTF8.GetBytes("1fiFxnaBZJbZHdSJBDdN");
-
+            var key = Encoding.UTF8.GetBytes(_configuration.GetSection("JwtConfig:Secret").Value);
+            //var key = Encoding.UTF8.GetBytes("HjTkqJTiMtS0pcML0C4B");
             var tokenDescriptor = new SecurityTokenDescriptor()
             {
                 Subject = new ClaimsIdentity(new[]
                 {
-                    new Claim(JwtRegisteredClaimNames.Email, user.Username),
+                    new Claim("Id", user.Id),
+                    new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                    new Claim(JwtRegisteredClaimNames.Email, value: user.Email),
                     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                     new Claim(JwtRegisteredClaimNames.Iat, DateTime.Now.ToUniversalTime().ToString()),
                 }),
-
                 Expires = DateTime.Now.AddHours(1),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256),
             };

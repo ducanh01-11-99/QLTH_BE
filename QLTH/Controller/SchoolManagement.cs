@@ -1,10 +1,13 @@
-﻿using Microsoft.AspNetCore.JsonPatch;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
 using QLTH.Data;
 using QLTH.Models.DTO;
 
 namespace QLTH.Controller
 {
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [Route("api/School")]
     [ApiController]
     public class SchoolManagement : ControllerBase
