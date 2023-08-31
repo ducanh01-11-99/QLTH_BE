@@ -12,6 +12,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using QLTH.Models.RequestDTO;
 using Microsoft.AspNetCore.Identity;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using QLTH.Utilities;
 
 namespace QLTH.Controller
 {
@@ -35,18 +37,47 @@ namespace QLTH.Controller
         [HttpPost]
         [Route("CreateUser")]
         public async Task<ActionResult<Registrtion>> registration(UserDTO request) {
-            CreatePasswordHash(request.Password, out byte[] passwordhash, out byte[] passwordSalt);
-            user.Username = request.Username;
-            user.PasswordHash = passwordhash;
-            user.PasswordSalt = passwordSalt;
+            var encryptedPass = Encrypt(request.Password);
+            // hàm validate MK
+            if(!ValidatePassword.Validate(request.Password))
+            {
+                return BadRequest("Not OK");
+            }
+            // hàm validate username
+
+            // hàm check trùng userName
+
+            // Hàm tạo tài khoản mới
             var connectString = _configuration["ConnectionStrings:DefaultSQLConnection"].ToString() + ";trustServerCertificate=true";
-           // SqlConnection con = new SqlConnection(connectString);
-            // SqlCommand cmd = new SqlCommand("INSERT INTO Registration(UserName,Password,email,IsActive)VALUES('" + DTO.UserName+"',' "+ DTO.Password + "','" + DTO.Email + "','" + DTO.isActive + "')", con);
-            //con.Open();
-            //int i = cmd.ExecuteNonQuery();
-            //con.Close();
-            return Ok(user);
+            SqlConnection con = new SqlConnection(connectString);
+            con.Open();
+            SqlCommand command = new SqlCommand("Insert Into Account (UserName, Password) Values (@userName, @password)", con);
+
+            // Cung cấp các giá trị cho các tham số
+            command.Parameters.AddWithValue("@userName", request.Username);
+            command.Parameters.AddWithValue("@password", encryptedPass);
+
+            // Thực thi câu lệnh
+            int affectedRows = command.ExecuteNonQuery();
+            var reMess = "";
+
+            // Kiểm tra xem câu lệnh có được thực hiện thành công hay không
+            if (affectedRows > 0)
+            {
+                // Câu lệnh được thực hiện thành công
+                reMess = "Câu lệnh được thực hiện thành công";
+            }
+            else
+            {
+                // Câu lệnh không được thực hiện thành công
+                reMess = "Câu lệnh không được thực hiện thành công";
+            }
+            con.Close();
+
+
+            return Ok(reMess);
         }
+
 
         // api đăng nhập -> bổ sung jwt, access token cho mỗi lần đăng nhập
         // tạo hàm mã hóa, giải mã mật khẩu -> check điều kiện đăng nhập
@@ -72,17 +103,7 @@ namespace QLTH.Controller
                     UserName = userName,
                 };
 
-
-
-                // byte[] bytesPass = Encoding.ASCII.GetBytes(password);
-                // byte[] bytesPassSalt = Encoding.ASCII.GetBytes("1234");
-
-                //Check trùng mật khẩu
-                //if (!VerifyPasswordHash(request.Password, bytesPass, bytesPassSalt))
-                //{
-                //    var token = GenerateJwtToken(new UserDTO(userName, password, "19020217@vnu.edu.vn", 1));
-                //}
-                if (request.Password == password)
+                if (Decrypt(password) == request.Password)
                 {
                     var token = GenerateJwtToken(newUser);
                     return Ok(new ResponseMessage(token, 0, true, false)); ;
@@ -121,25 +142,49 @@ namespace QLTH.Controller
 
 
 
-
-        private void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
+        // Encryp Password
+        private static string Encrypt(string clearText)
         {
-            using (var hmac = new HMACSHA512())
+            string encryptionKey = "MAKV2SPBNI99212";
+            byte[] clearBytes = Encoding.Unicode.GetBytes(clearText);
+            using (Aes encryptor = Aes.Create())
             {
-                passwordSalt = hmac.Key;
-                passwordHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+                Rfc2898DeriveBytes pdb = new Rfc2898DeriveBytes(encryptionKey, new byte[] { 0x49, 0x76, 0x61, 0x6e, 0x20, 0x4d, 0x65, 0x64, 0x76, 0x65, 0x64, 0x65, 0x76 });
+                encryptor.Key = pdb.GetBytes(32);
+                encryptor.IV = pdb.GetBytes(16);
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    using (CryptoStream cs = new CryptoStream(ms, encryptor.CreateEncryptor(), CryptoStreamMode.Write))
+                    {
+                        cs.Write(clearBytes, 0, clearBytes.Length);
+                        cs.Close();
+                    }
+                    clearText = Convert.ToBase64String(ms.ToArray());
+                }
             }
+            return clearText;
         }
 
-
-
-        private bool VerifyPasswordHash(string password, byte[] passwordHash, byte[] passwordSalt)
+        private static string Decrypt(string cipherText)
         {
-            using (var hmac = new HMACSHA512(passwordSalt))
+            string encryptionKey = "MAKV2SPBNI99212";
+            byte[] cipherBytes = Convert.FromBase64String(cipherText);
+            using (Aes encryptor = Aes.Create())
             {
-                var computeHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
-                return computeHash.SequenceEqual(passwordHash);
+                Rfc2898DeriveBytes pdb = new Rfc2898DeriveBytes(encryptionKey, new byte[] { 0x49, 0x76, 0x61, 0x6e, 0x20, 0x4d, 0x65, 0x64, 0x76, 0x65, 0x64, 0x65, 0x76 });
+                encryptor.Key = pdb.GetBytes(32);
+                encryptor.IV = pdb.GetBytes(16);
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    using (CryptoStream cs = new CryptoStream(ms, encryptor.CreateDecryptor(), CryptoStreamMode.Write))
+                    {
+                        cs.Write(cipherBytes, 0, cipherBytes.Length);
+                        cs.Close();
+                    }
+                    cipherText = Encoding.Unicode.GetString(ms.ToArray());
+                }
             }
+            return cipherText;
         }
 
         private string GenerateJwtToken(IdentityUser user)
